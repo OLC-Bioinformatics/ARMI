@@ -3,7 +3,7 @@ ARMI
 
 Antimicrobial Resistance Marker Identifier
 
-Using data from ARPCARD and ARDB to indenify antimicrobial resistance markers in bacteria
+Using data from ARPCARD and ARDB to indentify antimicrobial resistance markers in bacteria
 
 USAGE
 =====
