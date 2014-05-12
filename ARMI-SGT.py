@@ -23,7 +23,7 @@ def FileOpen(FileLocation):
     return
 
 def GenomeLookup(ac,start, stop):
-    Entrez.email = "michael.knowles@inspection.gc.ca"
+    Entrez.email = "email"
     search = Entrez.esearch(db="nuccore",
                             term=str(ac),
                             )
