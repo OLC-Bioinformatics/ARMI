@@ -1,4 +1,4 @@
-__author__ = 'mike'
+__author__ = 'mike knowles'
 #!/usr/bin/python
 from Bio import Entrez, SeqIO
 import os
