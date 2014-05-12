@@ -23,7 +23,7 @@ def FileOpen(FileLocation):
     return
 
 def GenomeLookup(ac,start, stop):
-    Entrez.email = "email"
+    Entrez.email = "email@example.com"
     search = Entrez.esearch(db="nuccore",
                             term=str(ac),
                             )
@@ -39,5 +39,5 @@ def GenomeLookup(ac,start, stop):
     current = time.strftime("%H:%M:%S")
     print "[%s] id is %s" % (current, result["IdList"][0])
     print "[%s] %s" % (current, record.seq)
-filehandle = "~/Downloads/ARDBflatFiles/genomeblast.tab"  # raw_input("Enter the table file: ") + "/genomeblast.tab"
+filehandle = raw_input("Enter the table file: ") + "/genomeblast.tab"
 FileOpen(filehandle)
