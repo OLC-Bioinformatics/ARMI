@@ -7,6 +7,7 @@ import re
 
 def FileOpen(FileLocation):
     current = time.strftime("%H:%M:%S")
+    prodict = {}
     print "[%s] File location is: %s" % (current, FileLocation)
     tab = open(os.path.expanduser(FileLocation), 'r')
     for line in tab:
@@ -20,26 +21,36 @@ def FileOpen(FileLocation):
         # aclength.group(2) is the start coordinate of query sequence in the HSP.
         # aclength.group(3) is the end coordinate of query sequence in the HSP.
         if aclength:
-            print "[%s] For the protein %s & resistance gene %s belonging to query genome: " \
-                  "%s with the length %s has the coordinates: %s-%s" \
-                  % (current, progene.group(1), progene.group(2), aclength.group(1),
-                     int(aclength.group(3))-int(aclength.group(2)), aclength.group(2), aclength.group(3))
             # time.sleep(5)
             # GenomeLookup(aclength.group(1), aclength.group(2), aclength.group(3), progene.group(2))
+            if aclength.group(1) not in prodict:
+                prodict[aclength.group(1)] = {progene.group(1): {'start': aclength.group(2), 'stop': aclength.group(3)}}
+            else:
+                prodict[aclength.group(1)][progene.group(1)] = {'start': aclength.group(2), 'stop': aclength.group(3)}
+                print prodict[aclength.group(1)][progene.group(1)].items()
+            # print "[%s] For the protein %s & resistance gene %s belonging to query genome: " \
+            #       "%s with the length %s has the coordinates: %s-%s" \
+            #       % (current, progene.group(1), progene.group(2), aclength.group(1),
+            #      int(aclength.group(3))-int(aclength.group(2)), aclength.group(2), aclength.group(3))
         elif progene:
-            print "[%s] No genome for %s protein & %s resistance gene" % (current, progene.group(1), progene.group(2))
-            prodict = {progene.group(1): {aclength.group(1): {'start': aclength.group(2), 'stop': aclength.group(3)}}}
+            # print "[%s] No genome for %s protein & %s resistance gene" % (current, progene.group(1), progene.group(2))
+            continue
         else:
             print "[%s] Failure" % (current)
+        if len(prodict[aclength.group(1)].keys()) < 1:
+            print prodict[aclength.group(1)].keys()
     tab.close()
-    dictprinter(prodict)  # Test dictionary
+    # dictprinter(prodict)  # Test dictionary
+    print (len(prodict.items()))
     return
 
 def dictprinter(obj):
-    for key, obj in obj.items():
-    print(key)
-    for attribute, value in obj.items():
-        print('{} : {}'.format(attribute, value))
+    for x in obj:
+        print ("\n" + x)
+        for y in obj[x]:
+            print (y)
+            for z in obj[x][y]:
+                print (z + ":" + obj[x][y][z])
 
 def GenomeLookup(ac,start, stop, gene):
     Entrez.email = "email@example.com"
