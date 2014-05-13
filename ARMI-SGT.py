@@ -75,47 +75,49 @@ def decider(prodict):
         for begin in prodict[genomeac]:
             for end in prodict[genomeac][begin]:
                 for gene in prodict[genomeac][begin][end]:
-                    if single:
-                        counter = 0
-                        record = GenomeLookup(genomeac, begin, end)
-                        # print ">%s (%s)\n%s" % (record.description, gene, record.seq)
-                        abrg.write(">%s (%s)\n%s\n" % (record.description, gene, record.seq))
-                    else:
-                        abrg.write(">%s (%s) %s-%s\n%s\n" % (record.description, gene, begin, end, record.seq[int(begin):int(end)]))
-                        counter += 1
+                    try:
+                        if single:
+                            counter = 0
+                            record = GenomeLookup(genomeac, begin, end)
+                            # print ">%s (%s)\n%s" % (record.description, gene, record.seq)
+                            abrg.write(">%s (%s)\n%s\n" % (record.description, gene, record.seq))
+                        else:
+                            abrg.write(">%s (%s) %s-%s\n%s\n" % (record.description, gene, begin, end, record.seq[int(begin):int(end)]))
+                            counter += 1
+                    except AttributeError:
+                        print "[%s] Unable to print %s to file" % (current, genomeac)
     abrg.close()
 
 
 
 
 def GenomeLookup(ac, start=False, stop=False):
-    time.sleep(2)
+    time.sleep(1)
+    current = time.strftime("%H:%M:%S")
     Entrez.email = "michael.knowles@inspection.gc.ca"
     search = Entrez.esearch(db="nuccore",
                             term=str(ac),
                             )
     result = Entrez.read(search)
     try:
-        result["IdList"][0]
+        if start == False:
+            handle = Entrez.efetch(db="nuccore",
+                           id=result["IdList"][0],
+                           rettype="fasta")
+            record = SeqIO.read(handle, "fasta")
+            handle.close()
+        else:
+            handle = Entrez.efetch(db="nuccore",
+                                   id=result["IdList"][0],
+                                   rettype="fasta",
+                                   strand=1,
+                                   seq_start=start,
+                                   seq_stop=stop)
+            record = SeqIO.read(handle, "fasta")
+            handle.close()
+        print "[%s] ID is %s for accession %s" % (current, result["IdList"][0], ac)
+        return record
     except IndexError:
-        print ac
-    if start == False:
-        handle = Entrez.efetch(db="nuccore",
-                       id=result["IdList"][0],
-                       rettype="fasta")
-        record = SeqIO.read(handle, "fasta")
-        handle.close()
-    else:
-        handle = Entrez.efetch(db="nuccore",
-                               id=result["IdList"][0],
-                               rettype="fasta",
-                               strand=1,
-                               seq_start=start,
-                               seq_stop=stop)
-        record = SeqIO.read(handle, "fasta")
-        handle.close()
-    current = time.strftime("%H:%M:%S")
-    print "[%s] ID is %s for accession %s" % (current, result["IdList"][0], ac)
-    return record
+        print "[%s] Unable to locate genome %s, skipping" % (current, ac)
 filehandle = "/nas/Pipeline_development/AntimicrobialResistance/ardbAnno1.0/tabs/abrg.tab" # raw_input("Enter the table files folder: ") + "abrg.tab"
 FileOpen(filehandle)
