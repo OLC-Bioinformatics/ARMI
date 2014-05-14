@@ -124,7 +124,9 @@ def GenomeLookup(ac, start=False, stop=False):
     except:
         print "[%s] Unable to locate genome %s, Unexpected error: %s" % (current, ac, sys.exc_info()[0])
 
-"Parser for argurments"
+'''
+Parser for argurments
+'''
 parser = argparse.ArgumentParser(description='Convert table file to fasta genomes given coordinates')
 parser.add_argument('--version', action='version', version='%(prog)s v0.3')
 parser.add_argument('-t', '--tab', type=str, required=True, help='arbg.tab file location')
