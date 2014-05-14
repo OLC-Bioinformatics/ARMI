@@ -4,7 +4,7 @@ import os
 import time
 import re
 import sys
-
+import argparse
 
 def FileOpen(FileLocation):
     current = time.strftime("%H:%M:%S")
@@ -55,9 +55,12 @@ def dictprinter(obj):
 def decider(prodict):
     '''
     Decide if full genome or genome fragment should be downloaded with GenomeLookup
+    try:
+        abrgfasta = sys.argv[1]
+    except:
+        abrgfasta = '''"/nas/Pipeline_development/AntimicrobialResistance/ARMI/db/abrg.fa" ''' raw_input("Enter the save location:")
     '''
-    abrgfasta = "/nas/Pipeline_development/AntimicrobialResistance/ARMI/db/abrg.fa" # raw_input("Enter the save location:")
-    abrg = open(abrgfasta, 'w')
+    abrg = open(args['output'], 'w')
     for genomeac in prodict:
         current = time.strftime("%H:%M:%S")
         try:
@@ -94,8 +97,8 @@ def decider(prodict):
 
 def GenomeLookup(ac, start=False, stop=False):
     time.sleep(1)
+    Entrez.email = args['email']
     current = time.strftime("%H:%M:%S")
-    Entrez.email = "michael.knowles@inspection.gc.ca"
     search = Entrez.esearch(db="nuccore",
                             term=str(ac),
                             )
@@ -120,5 +123,12 @@ def GenomeLookup(ac, start=False, stop=False):
         return record
     except:
         print "[%s] Unable to locate genome %s, Unexpected error: %s" % (current, ac, sys.exc_info()[0])
-filehandle = "/nas/Pipeline_development/AntimicrobialResistance/ardbAnno1.0/tabs/abrg.tab" # raw_input("Enter the table files folder: ") + "abrg.tab"
-FileOpen(filehandle)
+
+"Parser for argurments"
+parser = argparse.ArgumentParser(description='Convert table file to fasta genomes given coordinates')
+parser.add_argument('--version', action='version', version='%(prog)s v0.3')
+parser.add_argument('-t', '--tab', type=str, required=True, help='arbg.tab file location')
+parser.add_argument('-e', '--email', required=True, help='A valid email address is required')
+parser.add_argument('-o', '--output', required=True, help='Specify output file')
+args = vars(parser.parse_args())
+FileOpen(args['tab'])
