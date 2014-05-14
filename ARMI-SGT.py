@@ -3,6 +3,7 @@ from Bio import Entrez, SeqIO
 import os
 import time
 import re
+import sys
 
 
 def FileOpen(FileLocation):
@@ -55,7 +56,7 @@ def decider(prodict):
     '''
     Decide if full genome or genome fragment should be downloaded with GenomeLookup
     '''
-    abrgfasta = "/nas/Pipeline_development/AntimicrobialResistance/ARMI/db/abrg.fasta" # raw_input("Enter the save location:")
+    abrgfasta = "/nas/Pipeline_development/AntimicrobialResistance/ARMI/db/abrg.fa" # raw_input("Enter the save location:")
     abrg = open(abrgfasta, 'w')
     for genomeac in prodict:
         current = time.strftime("%H:%M:%S")
@@ -117,7 +118,7 @@ def GenomeLookup(ac, start=False, stop=False):
             handle.close()
         print "[%s] ID is %s for accession %s" % (current, result["IdList"][0], ac)
         return record
-    except IndexError:
-        print "[%s] Unable to locate genome %s, skipping" % (current, ac)
+    except:
+        print "[%s] Unable to locate genome %s, Unexpected error: %s" % (current, ac, sys.exc_info()[0])
 filehandle = "/nas/Pipeline_development/AntimicrobialResistance/ardbAnno1.0/tabs/abrg.tab" # raw_input("Enter the table files folder: ") + "abrg.tab"
 FileOpen(filehandle)
