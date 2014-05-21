@@ -1,53 +1,55 @@
+__author__ = 'blais'
 __author__ = 'mikeknowles'
+""" Includes threading found in examples:
+http://www.troyfawkes.com/learn-python-multithreading-queues-basics/
+http://www.ibm.com/developerworks/aix/library/au-threadingpython/
+https://docs.python.org/2/library/threading.html
+"""
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio import SeqIO
-from subprocess import call
+import subprocess
 import os
 import glob
 import time
 import sys
-import threading
-import Queue
+from threading import Thread
+from Queue import Queue
 import shlex
 import argparse
 
-queue = Queue.Queue()
+def makeblastdb(queue):
+    while True:
+        #grabs fastapath from queue
+        fastapath = queue.get()
+        #makeblastdb if not exist
+        if not os.path.isfile(fastapath + ".nhr"):
+            subprocess.Popen(shlex.split("makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)),
+                             stdout=open(os.devnull, 'wb'))
+            sys.stdout.write('.')
+        else:
+            pass
+        # signals to queue job is done
+        queue.task_done()
 
-class makeblastdb(threading.Thread):
-    """Threaded makeblastdb"""
-    def __init__(self, queue):
-      threading.Thread.__init__(self)
-      self.queue = queue
+queue = Queue()
 
-    def run(self):
-        while True:
-            #grabs fastapath from queue
-            fastapath = self.queue.get()
-            #makeblastdb if not exist
-            if not os.path.isfile(fastapath + ".nhr"):
-                call(shlex.split("makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)))
-            else:
-                pass
-            # signals to queue job is done
-            self.queue.task_done()
-
-def makedbthreads(path):
+def makedbthreads(fastas):
     ''' Setup and create threads for class'''
-    fastas = glob.glob(path + "*.fasta")
     for i in range(len(fastas)):
-        sys.stdout.write('.')
-        t = makeblastdb(queue)
-        t.setDaemon(True)
-        t.start()
+        threads = Thread(target=makeblastdb, args=(queue,))
+        threads.setDaemon(True)
+        threads.start()
     for fasta in fastas:
         queue.put(fasta)
     #wait on the queue until everything has been processed
     queue.join()
 
 def blaster(path, out):
-    print "[%s] Creating necessary databases for BLAST" % (time.strftime("%H:%M:%S"))
-    makedbthreads(path)
-    print "[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
+    fastas = glob.glob(path + "*.fasta")
+    sys.stdout.write("[%s] Creating necessary databases for BLAST" % (time.strftime("%H:%M:%S")))
+    makedbthreads(fastas)
+    print "\n[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
+
 
 
 parser = argparse.ArgumentParser(description='Antibiotic Resistance Marker Identifier:\n'
