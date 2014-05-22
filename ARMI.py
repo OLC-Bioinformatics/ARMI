@@ -43,14 +43,13 @@ def makedbthreads(fastas):
 
 def runblast(queue2):
     while True:
-        genomefasta = queue2.get()
-        for key in genomefasta:
-            for db in key:
-                print db
-                gene = re.search('\/(\w+)\.fasta', db)
-                blastn = NcbiblastnCommandline(query=key, db=db, evalue=1e-40, out=gene.group(1))
-                print blastn
-                subprocess.Popen(shlex.split(blastn))
+        genome, db = queue2.get()
+        gene = re.search('\/(\w+)\.fasta', db)
+        path = re.search('(.*).fasta', genome)
+        out = "%s%s.xml" % (path.group(1), gene.group(1))
+        blastn = NcbiblastnCommandline(query=genome, db=db, evalue=1e-40, out=out, outfrmt=5)
+        print blastn
+        subprocess.Popen(shlex.split(blastn))
         queue2.task_done()
 
 def blastnthreads(fastas, genomes):
@@ -60,8 +59,8 @@ def blastnthreads(fastas, genomes):
         threads.start()
     genomefasta = {}
     for genome in genomes:
-        genomefasta.setdefault(genome, []).append(fastas)
-        queue2.put(genomefasta)
+        for fasta in fastas:
+            queue2.put((genome, fasta))
     #wait on the queue until everything has been processed
     queue2.join()
 
