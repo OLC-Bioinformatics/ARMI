@@ -6,63 +6,117 @@ https://docs.python.org/2/library/threading.html
 """
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio import SeqIO
+from Bio.Blast import NCBIXML
 from threading import Thread
 from Queue import Queue
 import subprocess, os, glob, time, sys, shlex, argparse, re
 
+count = 0
 
-def makeblastdb(queue):
+
+def dotter():
+    global count
+    if count <= 80:
+        sys.stdout.write('.')
+        count += 1
+    else:
+        sys.stdout.write('\n[%s].' % (time.strftime("%H:%M:%S")))
+        count = 0
+
+
+def makeblastdb(dqueue):
     while True:
-        #grabs fastapath from queue
-        fastapath = queue.get()
+        #grabs fastapath from dqueue
+        fastapath = dqueue.get()
         #makeblastdb if not exist
         nhr = "%s.nhr" % (fastapath)
         if not os.path.isfile(str(nhr)):
             print "makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)
-            subprocess.Popen(shlex.split("makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)),
-                             stdout=open(os.devnull, 'wb'))
-            sys.stdout.write('.')
-        else:
-            pass
-        # signals to queue job is done
-        queue.task_done()
+            subprocess.Popen(shlex.split("makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)))
+            dotter()
+        # signals to dqueue job is done
+        dqueue.task_done()
 
-queue = Queue()
-queue2 = Queue()
+dqueue = Queue()
+blastqueue = Queue()
+parsequeue = Queue()
+plusqueue = Queue()
 
 def makedbthreads(fastas):
     ''' Setup and create threads for class'''
     for i in range(len(fastas)):
-        threads = Thread(target=makeblastdb, args=(queue,))
+        threads = Thread(target=makeblastdb, args=(dqueue,))
         threads.setDaemon(True)
         threads.start()
     for fasta in fastas:
-        queue.put(fasta)
-    #wait on the queue until everything has been processed
-    queue.join()
+        dqueue.put(fasta)
+    #wait on the dqueue until everything has been processed
+    dqueue.join()
 
-def runblast(queue2):
+def runblast(blastqueue):
     while True:
-        genome, db = queue2.get()
-        gene = re.search('\/(\w+)\.fasta', db)
-        path = re.search('(.*).fasta', genome)
-        out = "%s%s.xml" % (path.group(1), gene.group(1))
-        blastn = NcbiblastnCommandline(query=genome, db=db, evalue=1e-40, out=out, outfrmt=5)
-        print blastn
-        subprocess.Popen(shlex.split(blastn))
-        queue2.task_done()
+        genome, db, out = blastqueue.get()
+        blastn = NcbiblastnCommandline(query=genome, db=db, evalue=1e-40, out=out, outfmt=5)
+        stdout, stderr = blastn()
+        blastqueue.task_done()
+
 
 def blastnthreads(fastas, genomes):
     for i in range(len(fastas) * len(genomes)):
-        threads = Thread(target=runblast, args=(queue2,))
+        threads = Thread(target=runblast, args=(blastqueue,))
         threads.setDaemon(True)
         threads.start()
-    genomefasta = {}
+    blastpath = []
     for genome in genomes:
         for fasta in fastas:
-            queue2.put((genome, fasta))
+            gene = re.search('\/(\w+)\.fasta', fasta)
+            path = re.search('(.+)\/(.+?)\.fasta', genome)
+            out = "%s/../tmp/%s.%s.xml" % (path.group(1), path.group(2), gene.group(1))
+            blastpath.append(out)
+            if not os.path.isfile(out):
+                blastqueue.put((genome, fasta, out))
+                dotter()
     #wait on the queue until everything has been processed
-    queue2.join()
+    blastqueue.join()
+    return blastpath
+
+
+def blastparser(parsequeue):
+    while True:
+        hsp = parsequeue.get()
+        if hsp.identities == hsp.align_length:
+            plus = '+'
+        elif hsp.align_length > hsp.identities >= (hsp.align_length * 0.9):
+            print "%s %s" % (hsp.align_length, hsp.identities)
+            perid = int((float(hsp.identities) / hsp.align_length) * 100)
+            print(perid)
+            plus = '(%s%%)' % (perid)
+        else:
+            plus = '-'
+        parsequeue.task_done()
+        parsequeue.put(plus)
+        return plus
+
+
+def parsethreader(xml):
+    dotter()
+    numhsp = 0
+    with open(xml) as file:
+        numhsp = sum(line.count('<Hsp>') for line in file)
+    if numhsp != 0:
+        handle = open(xml)
+        records = NCBIXML.parse(handle)
+        for i in range(numhsp):
+            threads = Thread(target=blastparser, args=(parsequeue,))
+            threads.setDaemon(True)
+            threads.start()
+        for record in records:
+            for alignment in record.alignments:
+                for hsp in alignment.hsps:
+                    parsequeue.put(hsp)
+                    plus = parsequeue.get()
+                    print plus
+
 
 def blaster(path, targets, out):
     fastas = glob.glob(path + "*.fasta")
@@ -71,8 +125,10 @@ def blaster(path, targets, out):
     makedbthreads(fastas)
     print "\n[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
     print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
-    blastnthreads(fastas, genomes)
-
+    blastpath = blastnthreads(fastas, genomes)
+    for xml in blastpath:
+     parsethreader(xml)
+    parsequeue.join()
 
 
 
