@@ -66,13 +66,13 @@ def blastnthreads(fastas, genomes):
         threads = Thread(target=runblast, args=(blastqueue,))
         threads.setDaemon(True)
         threads.start()
-    blastpath = []
+    blastpath = {}
     for genome in genomes:
         for fasta in fastas:
             gene = re.search('\/(\w+)\.fasta', fasta)
             path = re.search('(.+)\/(.+?)\.fasta', genome)
             out = "%s/../tmp/%s.%s.xml" % (path.group(1), path.group(2), gene.group(1))
-            blastpath.append(out)
+            blastpath[out] = {path.group(2): {gene.group(1)}}
             if not os.path.isfile(out):
                 blastqueue.put((genome, fasta, out))
                 dotter()
@@ -80,26 +80,37 @@ def blastnthreads(fastas, genomes):
     blastqueue.join()
     return blastpath
 
+plusdict = {}
 
 def blastparser(parsequeue):
     while True:
-        hsp = parsequeue.get()
+        global plusdict
+        hsp, genomes = parsequeue.get()
         if hsp.identities == hsp.align_length:
             plus = '+'
         elif hsp.align_length > hsp.identities >= (hsp.align_length * 0.9):
-            print "%s %s" % (hsp.align_length, hsp.identities)
             perid = int((float(hsp.identities) / hsp.align_length) * 100)
-            print(perid)
             plus = '(%s%%)' % (perid)
         else:
             plus = '-'
+        for genome in genomes:
+            for gene in genomes[genome]:
+                try:
+                    if plus == '+':
+                        plusdict[genome][gene] = plus
+                    elif plusdict[genome][gene] != '+':
+                        plusdict[genome][gene] = plus
+                    # elif plus == '(%s%%)' % (perid):
+                    #     print "%s %s %s" % (gene , genome, plus)
+                except:
+                    if genome not in plusdict:
+                        plusdict[genome] = {gene: plus}
         parsequeue.task_done()
-        parsequeue.put(plus)
-        return plus
 
 
-def parsethreader(xml):
-    dotter()
+def parsethreader(xml, genomes):
+    global plusdict
+    # dotter()
     numhsp = 0
     with open(xml) as file:
         numhsp = sum(line.count('<Hsp>') for line in file)
@@ -113,9 +124,15 @@ def parsethreader(xml):
         for record in records:
             for alignment in record.alignments:
                 for hsp in alignment.hsps:
-                    parsequeue.put(hsp)
-                    plus = parsequeue.get()
-                    print plus
+                    parsequeue.put((hsp, genomes))
+    else:
+        for genome in genomes:
+            for gene in genomes[genome]:
+                try:
+                    if gene not in plusdict[genome]:
+                        plusdict[genome][gene] = '-'
+                except:
+                    plusdict[genome] = {gene: '-'}
 
 
 def blaster(path, targets, out):
@@ -126,9 +143,11 @@ def blaster(path, targets, out):
     print "\n[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
     print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
     blastpath = blastnthreads(fastas, genomes)
+    print "[%s] Now parsing BLAST database searches" % (time.strftime("%H:%M:%S"))
     for xml in blastpath:
-     parsethreader(xml)
+        parsethreader(xml, blastpath[xml])
     parsequeue.join()
+    print plusdict
 
 
 
