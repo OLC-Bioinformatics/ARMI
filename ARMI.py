@@ -9,7 +9,7 @@ from Bio import SeqIO
 from Bio.Blast import NCBIXML
 from threading import Thread
 from Queue import Queue
-import subprocess, os, glob, time, sys, shlex, argparse, re
+import subprocess, os, glob, time, sys, shlex, argparse, re, csv
 
 count = 0
 
@@ -62,7 +62,7 @@ def runblast(blastqueue):
 
 
 def blastnthreads(fastas, genomes):
-    for i in range(len(fastas) * len(genomes)):
+    for i in range(len(fastas)):
         threads = Thread(target=runblast, args=(blastqueue,))
         threads.setDaemon(True)
         threads.start()
@@ -76,8 +76,8 @@ def blastnthreads(fastas, genomes):
             if not os.path.isfile(out):
                 blastqueue.put((genome, fasta, out))
                 dotter()
-    #wait on the queue until everything has been processed
-    blastqueue.join()
+        #wait on the queue until everything has been processed
+        blastqueue.join()
     return blastpath
 
 plusdict = {}
@@ -97,14 +97,18 @@ def blastparser(parsequeue):
             for gene in genomes[genome]:
                 try:
                     if plus == '+':
-                        plusdict[genome][gene] = plus
-                    elif plusdict[genome][gene] != '+':
-                        plusdict[genome][gene] = plus
+                        plusdict[genome][gene] = {plus}
+                    elif plusdict[genome][gene] != {'+'}:
+                        plusdict[genome][gene] = {plus}
                     # elif plus == '(%s%%)' % (perid):
                     #     print "%s %s %s" % (gene , genome, plus)
                 except:
                     if genome not in plusdict:
-                        plusdict[genome] = {gene: plus}
+                        plusdict[genome] = {gene: {plus}}
+                    elif gene not in plusdict[genome]:
+                        plusdict[genome][gene] = {plus}
+                    elif plus == '+':
+                        plusdict[genome][gene] = {plus}
         parsequeue.task_done()
 
 
@@ -147,7 +151,23 @@ def blaster(path, targets, out):
     for xml in blastpath:
         parsethreader(xml, blastpath[xml])
     parsequeue.join()
-    print plusdict
+    csvheader = 'Strain'
+    row = ""
+    rowcount = 0
+    for genomerow in plusdict:
+        row += "\n" + genomerow
+        rowcount += 1
+        for generow in sorted(plusdict[genomerow]):
+            if rowcount <= 1:
+                csvheader += ',' + generow
+            for plusrow in plusdict[genomerow][generow]:
+                row += ',' + plusrow
+    with open("%sGeneSeekr_results_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
+        csvfile.write(csvheader)
+        csvfile.write(row)
+
+
+
 
 
 
