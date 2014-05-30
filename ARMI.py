@@ -82,53 +82,54 @@ def blastnthreads(fastas, genomes):
 
 plusdict = {}
 
-def blastparser(parsequeue):
-    while True:
-        global plusdict
-        hsp, genomes = parsequeue.get()
-        if hsp.identities == hsp.align_length:
-            plus = '+'
-        elif hsp.align_length > hsp.identities >= (hsp.align_length * 0.9):
-            perid = int((float(hsp.identities) / hsp.align_length) * 100)
-            plus = '(%s%%)' % (perid)
-        else:
-            plus = '-'
-        for genome in genomes:
-            for gene in genomes[genome]:
-                try:
-                    if plus == '+':
-                        plusdict[genome][gene] = {plus}
-                    elif plusdict[genome][gene] != {'+'}:
-                        plusdict[genome][gene] = {plus}
-                    # elif plus == '(%s%%)' % (perid):
-                    #     print "%s %s %s" % (gene , genome, plus)
-                except:
-                    if genome not in plusdict:
-                        plusdict[genome] = {gene: {plus}}
-                    elif gene not in plusdict[genome]:
-                        plusdict[genome][gene] = {plus}
-                    elif plus == '+':
-                        plusdict[genome][gene] = {plus}
-        parsequeue.task_done()
-
+def blastparser(hsp, genomes):
+    global plusdict
+    if hsp.identities == hsp.align_length:
+        plus = '+'
+    elif hsp.align_length > hsp.identities >= (hsp.align_length * 0.9):
+        perid = int((float(hsp.identities) / hsp.align_length) * 100)
+        plus = '(%s%%)' % (perid)
+    else:
+        plus = '-'
+    for genome in genomes:
+        for gene in genomes[genome]:
+            try:
+                if plus == '+':
+                    plusdict[genome][gene] = {plus}
+                elif plusdict[genome][gene] != {'+'}:
+                    plusdict[genome][gene] = {plus}
+                # elif plus == '(%s%%)' % (perid):
+                #     print "%s %s %s" % (gene , genome, plus)
+            except:
+                if genome not in plusdict:
+                    plusdict[genome] = {gene: {plus}}
+                elif gene not in plusdict[genome]:
+                    plusdict[genome][gene] = {plus}
+                elif plus == '+':
+                    plusdict[genome][gene] = {plus}
 
 def parsethreader(xml, genomes):
     global plusdict
-    # dotter()
+    dotter()
     numhsp = 0
     with open(xml) as file:
         numhsp = sum(line.count('<Hsp>') for line in file)
     if numhsp != 0:
         handle = open(xml)
+        # if numhsp > 24:
+        #     numhsp = 24
         records = NCBIXML.parse(handle)
-        for i in range(numhsp):
-            threads = Thread(target=blastparser, args=(parsequeue,))
-            threads.setDaemon(True)
-            threads.start()
+        # # if parsequeue.not_empty():
+        # #     parsequeue.join()
+        # for i in range(numhsp):
+        #     threads = Thread(target=blastparser, args=(parsequeue,))
+        #     threads.setDaemon(True)
+        #     threads.start()
         for record in records:
             for alignment in record.alignments:
                 for hsp in alignment.hsps:
-                    parsequeue.put((hsp, genomes))
+                    blastparser(hsp, genomes)
+        parsequeue.join()
     else:
         for genome in genomes:
             for gene in genomes[genome]:
@@ -140,6 +141,7 @@ def parsethreader(xml, genomes):
 
 
 def blaster(path, targets, out):
+    global count
     fastas = glob.glob(path + "*.fasta")
     genomes = glob.glob(targets + "*.fasta")
     sys.stdout.write("[%s] Creating necessary databases for BLAST" % (time.strftime("%H:%M:%S")))
@@ -148,9 +150,9 @@ def blaster(path, targets, out):
     print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
     blastpath = blastnthreads(fastas, genomes)
     print "[%s] Now parsing BLAST database searches" % (time.strftime("%H:%M:%S"))
+    count = 80
     for xml in blastpath:
         parsethreader(xml, blastpath[xml])
-    parsequeue.join()
     csvheader = 'Strain'
     row = ""
     rowcount = 0
