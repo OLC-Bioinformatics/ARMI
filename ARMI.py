@@ -63,6 +63,7 @@ def runblast(blastqueue):
 
 
 def blastnthreads(fastas, genomes):
+    '''Setup and create  threads for blastn and xml path'''
     global antidict
     for i in range(len(fastas)):
         threads = Thread(target=runblast, args=(blastqueue,))
@@ -124,7 +125,6 @@ def parsethreader(xml, genomes):
             for alignment in record.alignments:
                 for hsp in alignment.hsps:
                     blastparser(hsp, genomes)
-        # parsequeue.join()
     else:
         for genome in genomes:
             for gene in genomes[genome]:
@@ -154,6 +154,7 @@ def blaster(path, targets, out):
     makedbthreads(fastas)
     print "\n[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
     print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
+    #make blastn threads and retrieve xml file locations
     blastpath = blastnthreads(fastas, genomes)
     print "[%s] Now parsing BLAST database searches" % (time.strftime("%H:%M:%S"))
     count = 80
@@ -165,6 +166,7 @@ def blaster(path, targets, out):
     csvheader = 'Strain'
     row = ""
     antirow = ""
+    uniquerow = ""
     rowcount = 0
     antihead = "Strain,Gene,\"Resistance Antibiotic\",\"Unique Resistance\"\n"
     for genomerow in plusdict:
@@ -181,9 +183,9 @@ def blaster(path, targets, out):
                         if othergene == propercasegene.lower:
                             if plusdict[genomerow][propercasegene] != {'-'}:
                                 tempcount += 1
-            else:
+            elif plusdict[genomerow][generow] != {'-'}:
                 tempcount = 1
-            # print tempcount, len(require[generow.lower()])
+            print tempcount, len(require[generow.lower()])
             if tempcount == len(require[generow.lower()]):
                 genedict[genomerow]['gene'].append(generow)
                 for antibio in antidict[generow.lower()]:
@@ -207,13 +209,16 @@ def blaster(path, targets, out):
                 genedict[genome]['unique'].append(antibiotic)
     for genomerow in genedict:
         antirow += "%s,\"" % (genomerow)
+        uniquerow += "%s," % (genomerow)
         for rgene in genedict[genomerow]['gene']:
             antirow += "%s\n" % (rgene)
         antirow = antirow.rstrip()
         antirow += "\",\""
         for ranti in genedict[genomerow]['anti']:
             antirow += "%s\n" % (ranti)
+            uniquerow += "%s," % (ranti)
         antirow = antirow.rstrip()
+        uniquerow += "\n"
         if len(genedict[genomerow]['unique']) > 0:
             antirow += "\",\""
             for uanti in genedict[genomerow]['unique']:
@@ -227,7 +232,10 @@ def blaster(path, targets, out):
     with open("%sARMI_results_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
         csvfile.write(antihead)
         csvfile.write(antirow)
-
+    with open("%sARMI_unique_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
+        csvfile.write(uniquerow)
+    print uniquedict
+    print genedict
 
 
 
