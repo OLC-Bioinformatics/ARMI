@@ -9,6 +9,7 @@ from Bio import SeqIO
 from Bio.Blast import NCBIXML
 from threading import Thread
 from Queue import Queue
+from collections import defaultdict
 import subprocess, os, glob, time, sys, shlex, argparse, re, csv
 
 count = 0
@@ -62,6 +63,7 @@ def runblast(blastqueue):
 
 
 def blastnthreads(fastas, genomes):
+    global antidict
     for i in range(len(fastas)):
         threads = Thread(target=runblast, args=(blastqueue,))
         threads.setDaemon(True)
@@ -81,6 +83,7 @@ def blastnthreads(fastas, genomes):
     return blastpath
 
 plusdict = {}
+
 
 def blastparser(hsp, genomes):
     global plusdict
@@ -116,58 +119,114 @@ def parsethreader(xml, genomes):
         numhsp = sum(line.count('<Hsp>') for line in file)
     if numhsp != 0:
         handle = open(xml)
-        # if numhsp > 24:
-        #     numhsp = 24
         records = NCBIXML.parse(handle)
-        # # if parsequeue.not_empty():
-        # #     parsequeue.join()
-        # for i in range(numhsp):
-        #     threads = Thread(target=blastparser, args=(parsequeue,))
-        #     threads.setDaemon(True)
-        #     threads.start()
         for record in records:
             for alignment in record.alignments:
                 for hsp in alignment.hsps:
                     blastparser(hsp, genomes)
-        parsequeue.join()
+        # parsequeue.join()
     else:
         for genome in genomes:
             for gene in genomes[genome]:
                 try:
                     if gene not in plusdict[genome]:
-                        plusdict[genome][gene] = '-'
+                        plusdict[genome][gene] = {'-'}
                 except:
-                    plusdict[genome] = {gene: '-'}
+                    plusdict[genome] = {gene: {'-'}}
 
+def defdict(file):
+    ndict = defaultdict(list)
+    with open(args['tab']+file) as tab:
+        for line in tab:
+            tline = line.strip().split(None, 1)
+            ndict[tline[0]].append(tline[1])
+    return ndict
 
 def blaster(path, targets, out):
+    #modify global dotter() counter
     global count
+    #retrieve markers from input
     fastas = glob.glob(path + "*.fasta")
+    #retrieve genomes from input
     genomes = glob.glob(targets + "*.fasta")
     sys.stdout.write("[%s] Creating necessary databases for BLAST" % (time.strftime("%H:%M:%S")))
+    #push markers to threads
     makedbthreads(fastas)
     print "\n[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
     print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
     blastpath = blastnthreads(fastas, genomes)
     print "[%s] Now parsing BLAST database searches" % (time.strftime("%H:%M:%S"))
     count = 80
+    require = defdict("require.tab")
+    antidict = defdict("typeResis.tab")
+    genedict = defaultdict(dict)
     for xml in blastpath:
         parsethreader(xml, blastpath[xml])
     csvheader = 'Strain'
     row = ""
+    antirow = ""
     rowcount = 0
+    antihead = "Strain,Gene,\"Resistance Antibiotic\",\"Unique Resistance\"\n"
     for genomerow in plusdict:
+        genedict[genomerow] = {'anti': [], 'gene': [], 'unique': []}
         row += "\n" + genomerow
         rowcount += 1
         for generow in sorted(plusdict[genomerow]):
             if rowcount <= 1:
                 csvheader += ',' + generow
+            tempcount = 0
+            if generow.lower() in require:
+                for othergene in require[generow.lower()]:
+                    for propercasegene in plusdict[genomerow]:
+                        if othergene == propercasegene.lower:
+                            if plusdict[genomerow][propercasegene] != {'-'}:
+                                tempcount += 1
+            else:
+                tempcount = 1
+            # print tempcount, len(require[generow.lower()])
+            if tempcount == len(require[generow.lower()]):
+                genedict[genomerow]['gene'].append(generow)
+                for antibio in antidict[generow.lower()]:
+                    if antibio not in genedict[genomerow]['anti']:
+                        genedict[genomerow]['anti'].append(antibio)
             for plusrow in plusdict[genomerow][generow]:
                 row += ',' + plusrow
+
+    uniquedict = {}
+    for genome in genedict:
+        for antibiotic in genedict[genome]['anti']:
+            if antibiotic not in uniquedict:
+                uniquedict[antibiotic] = []
+            for compargenome in genedict:
+                if antibiotic not in genedict[compargenome]['anti']:
+                    uniquedict[antibiotic].append(genome)
+    for antibiotic in uniquedict:
+        if len(antibiotic) == 1:
+            print antibiotic, uniquedict[antibiotic]
+            for genome in uniquedict[antibiotic]:
+                genedict[genome]['unique'].append(antibiotic)
+    for genomerow in genedict:
+        antirow += "%s,\"" % (genomerow)
+        for rgene in genedict[genomerow]['gene']:
+            antirow += "%s\n" % (rgene)
+        antirow = antirow.rstrip()
+        antirow += "\",\""
+        for ranti in genedict[genomerow]['anti']:
+            antirow += "%s\n" % (ranti)
+        antirow = antirow.rstrip()
+        if len(genedict[genomerow]['unique']) > 0:
+            antirow += "\",\""
+            for uanti in genedict[genomerow]['unique']:
+                antirow += "%s\n" % (uanti)
+            antirow = antirow.rstrip()
+        antirow += "\"\n"
+
     with open("%sGeneSeekr_results_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
         csvfile.write(csvheader)
         csvfile.write(row)
-
+    with open("%sARMI_results_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
+        csvfile.write(antihead)
+        csvfile.write(antirow)
 
 
 
@@ -179,5 +238,6 @@ parser.add_argument('--version', action='version', version='%(prog)s v0.1')
 parser.add_argument('-i', '--input', required=True, help='Specify input fasta folder')
 parser.add_argument('-m', '--marker', required=True, help='Specify antibiotic markers folder')
 parser.add_argument('-o', '--output', required=True, help='Specify output folder for csv')
+parser.add_argument('-t', '--tab', type=str, required=True, help='tables file location')
 args = vars(parser.parse_args())
 blaster(args['marker'], args['input'], args['output'])
