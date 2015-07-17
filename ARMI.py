@@ -10,7 +10,7 @@ from Bio.Blast import NCBIXML
 from threading import Thread
 from Queue import Queue
 from collections import defaultdict
-import subprocess, os, glob, time, sys, shlex, argparse, re, csv
+import subprocess, os, glob, time, sys, shlex, argparse, re, threading, json, mmap
 
 count = 0
 
@@ -32,7 +32,7 @@ def makeblastdb(dqueue):
         #makeblastdb if not exist
         nhr = "%s.nhr" % (fastapath)
         if not os.path.isfile(str(nhr)):
-            print "makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)
+            # print "makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)
             subprocess.Popen(shlex.split("makeblastdb -in %s -dbtype nucl -out %s" % (fastapath, fastapath)))
             dotter()
         # signals to dqueue job is done
@@ -75,7 +75,7 @@ def blastnthreads(fastas, genomes):
             gene = re.search('\/(\w+)\.fasta', fasta)
             path = re.search('(.+)\/(.+?)\.fasta', genome)
             out = "%s/../tmp/%s.%s.xml" % (path.group(1), path.group(2), gene.group(1))
-            blastpath[out] = {path.group(2): {gene.group(1)}}
+            blastpath[out] = {path.group(2): (gene.group(1),)}
             if not os.path.isfile(out):
                 blastqueue.put((genome, fasta, out))
                 dotter()
@@ -86,12 +86,12 @@ def blastnthreads(fastas, genomes):
 plusdict = {}
 
 
-def blastparser(hsp, genomes):
+def blastparser(alignment, hsp, genomes):
     global plusdict
-    if hsp.identities == hsp.align_length:
+    if hsp.identities == alignment.length:
         plus = '+'
-    elif hsp.align_length > hsp.identities >= (hsp.align_length * 0.9):
-        perid = int((float(hsp.identities) / hsp.align_length) * 100)
+    elif alignment.length > hsp.identities >= (alignment.length * 0.7):
+        perid = int((float(hsp.identities) / alignment.length) * 100)
         plus = '(%s%%)' % (perid)
     else:
         plus = '-'
@@ -119,12 +119,39 @@ def parsethreader(xml, genomes):
     with open(xml) as file:
         numhsp = sum(line.count('<Hsp>') for line in file)
     if numhsp != 0:
-        handle = open(xml)
+        handle = open(xml, 'r')
+        mm = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+        handle.close()
+        records = NCBIXML.parse(mm)
+        for record in records:
+            for alignment in record.alignments:
+                for hsp in alignment.hsps:
+                    blastparser(alignment, hsp, genomes)
+        mm.close()
+    else:
+        for genome in genomes:
+            for gene in genomes[genome]:
+                try:
+                    if gene not in plusdict[genome]:
+                        plusdict[genome][gene] = {'-'}
+                except:
+                    plusdict[genome] = {gene: {'-'}}
+
+
+def parsethreaderr(xml, genomes):
+    global plusdict
+    dotter()
+    numhsp = 0
+    with open(xml) as file:
+        numhsp = sum(line.count('<Hsp>') for line in file)
+    if numhsp != 0:
+        handle = open(xml, 'r')
         records = NCBIXML.parse(handle)
         for record in records:
             for alignment in record.alignments:
                 for hsp in alignment.hsps:
-                    blastparser(hsp, genomes)
+                    blastparser(alignment, hsp, genomes)
+        handle.close()
     else:
         for genome in genomes:
             for gene in genomes[genome]:
@@ -142,9 +169,10 @@ def defdict(file):
             ndict[tline[0]].append(tline[1])
     return ndict
 
-def blaster(path, targets, out):
+def blaster(path, targets, out, threshold):
     #modify global dotter() counter
     global count
+
     #retrieve markers from input
     fastas = glob.glob(path + "*.fasta")
     #retrieve genomes from input
@@ -153,22 +181,34 @@ def blaster(path, targets, out):
     #push markers to threads
     makedbthreads(fastas)
     print "\n[%s] BLAST database(s) created" % (time.strftime("%H:%M:%S"))
-    print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
-    #make blastn threads and retrieve xml file locations
-    blastpath = blastnthreads(fastas, genomes)
-    print "[%s] Now parsing BLAST database searches" % (time.strftime("%H:%M:%S"))
+    if os.path.isfile('%sblastxmldict.json' % targets):
+        print "[%s] Loading BLAST data from file" % (time.strftime("%H:%M:%S"))
+        blastpath = json.load(open('%sblastxmldict.json' % targets))
+    else:
+        print "[%s] Now performing BLAST database searches" % (time.strftime("%H:%M:%S"))
+        # make blastn threads and retrieve xml file locations
+        blastpath = blastnthreads(fastas, genomes)
+        json.dump(blastpath, open('%sblastxmldict.json' % targets, 'w'), sort_keys=True, indent=4, separators=(',', ': '))
     count = 80
     require = defdict("require.tab")
     antidict = defdict("typeResis.tab")
     genedict = defaultdict(dict)
+    start = time.clock()
+    for xml in blastpath:
+        parsethreaderr(xml, blastpath[xml])
+    io = time.clock() - start
+    start = time.clock()
     for xml in blastpath:
         parsethreader(xml, blastpath[xml])
+    mmaped = time.clock() - start
+    print "\n[%s] Runtime for mmap method: %ss I/O method: %ss" % (time.strftime("%H:%M:%S"), mmaped, io)
     csvheader = 'Strain'
     row = ""
     antirow = ""
     uniquerow = ""
     rowcount = 0
     antihead = "Strain,Gene,\"Resistance Antibiotic\",\"Unique Resistance\"\n"
+    uniquehead = "Strain"
     for genomerow in plusdict:
         genedict[genomerow] = {'anti': [], 'gene': [], 'unique': []}
         row += "\n" + genomerow
@@ -176,18 +216,24 @@ def blaster(path, targets, out):
         for generow in sorted(plusdict[genomerow]):
             if rowcount <= 1:
                 csvheader += ',' + generow
-            tempcount = 0
+            tempcount = 1
+
             if generow.lower() in require:
                 for othergene in require[generow.lower()]:
                     for propercasegene in plusdict[genomerow]:
-                        if othergene == propercasegene.lower:
+                        if othergene == propercasegene.lower():
+                            # print propercasegene, othergene, require[generow.lower()], tempcount, len(require[generow.lower()]), plusdict[genomerow][generow]
                             if plusdict[genomerow][propercasegene] != {'-'}:
                                 tempcount += 1
             elif plusdict[genomerow][generow] != {'-'}:
+                # print plusdict[genomerow][generow]
                 tempcount = 1
-            print tempcount, len(require[generow.lower()])
-            if tempcount == len(require[generow.lower()]):
+            else:
+                tempcount = 0
+                # print tempcount, len(require[generow.lower()]), require[generow.lower()]
+            if tempcount == len(require[generow.lower()]) | 1 and plusdict[genomerow][generow] != {'-'}:
                 genedict[genomerow]['gene'].append(generow)
+                # print genomerow, generow, plusdict[genomerow][generow]
                 for antibio in antidict[generow.lower()]:
                     if antibio not in genedict[genomerow]['anti']:
                         genedict[genomerow]['anti'].append(antibio)
@@ -200,23 +246,33 @@ def blaster(path, targets, out):
             if antibiotic not in uniquedict:
                 uniquedict[antibiotic] = []
             for compargenome in genedict:
-                if antibiotic not in genedict[compargenome]['anti']:
+                if antibiotic not in genedict[compargenome]['anti'] and genome not in uniquedict[antibiotic]:
                     uniquedict[antibiotic].append(genome)
-    for antibiotic in uniquedict:
-        if len(antibiotic) == 1:
-            print antibiotic, uniquedict[antibiotic]
+    for antibiotic in sorted(uniquedict):
+        uniquehead += "," + antibiotic
+        # print len(uniquedict[antibiotic]), uniquedict[antibiotic]
+        if len(uniquedict[antibiotic]) <= threshold:
             for genome in uniquedict[antibiotic]:
-                genedict[genome]['unique'].append(antibiotic)
+                if len(uniquedict[antibiotic]) != 1:
+                    antithres = "%s (%s)" % (antibiotic, len(uniquedict[antibiotic]))
+                else:
+                    antithres = antibiotic
+                genedict[genome]['unique'].append(antithres)
+    uniquehead += "\n"
     for genomerow in genedict:
         antirow += "%s,\"" % (genomerow)
-        uniquerow += "%s," % (genomerow)
+        uniquerow += "%s" % (genomerow)
         for rgene in genedict[genomerow]['gene']:
             antirow += "%s\n" % (rgene)
         antirow = antirow.rstrip()
         antirow += "\",\""
         for ranti in genedict[genomerow]['anti']:
             antirow += "%s\n" % (ranti)
-            uniquerow += "%s," % (ranti)
+        for antibiotic in sorted(uniquedict):
+            if antibiotic in genedict[genomerow]['anti']:
+                uniquerow += ",+"
+            else:
+                uniquerow += ",-"
         antirow = antirow.rstrip()
         uniquerow += "\n"
         if len(genedict[genomerow]['unique']) > 0:
@@ -225,7 +281,6 @@ def blaster(path, targets, out):
                 antirow += "%s\n" % (uanti)
             antirow = antirow.rstrip()
         antirow += "\"\n"
-
     with open("%sGeneSeekr_results_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
         csvfile.write(csvheader)
         csvfile.write(row)
@@ -233,9 +288,8 @@ def blaster(path, targets, out):
         csvfile.write(antihead)
         csvfile.write(antirow)
     with open("%sARMI_unique_%s.csv" % (out, time.strftime("%Y.%m.%d.%H.%M.%S")), 'wb') as csvfile:
+        csvfile.write(uniquehead)
         csvfile.write(uniquerow)
-    print uniquedict
-    print genedict
 
 
 
@@ -247,5 +301,7 @@ parser.add_argument('-i', '--input', required=True, help='Specify input fasta fo
 parser.add_argument('-m', '--marker', required=True, help='Specify antibiotic markers folder')
 parser.add_argument('-o', '--output', required=True, help='Specify output folder for csv')
 parser.add_argument('-t', '--tab', type=str, required=True, help='tables file location')
+parser.add_argument('-c', '--cutoff', type=int, default=1, help='Threshold for maximum unique bacteria'
+                                                                ' for a single antibiotic')
 args = vars(parser.parse_args())
-blaster(args['marker'], args['input'], args['output'])
+blaster(args['marker'], args['input'], args['output'], args['cutoff'])
