@@ -1,67 +1,35 @@
-from collections import defaultdict
+__author__ = 'mikeknowles'
+from glob import glob
+from re import match
+from ARMICARD import
 import os, time, argparse, json, GeneSeekrv2
 
 
-def defdict(file):
-    ndict = defaultdict(list)
-    with open(args['tab']+file) as tab:
-        for line in tab:
-            tline = line.strip().split(None, 1)
-            ndict[tline[0]].append(tline[1])
-    return ndict
 
-def blaster(path, targets, out, threshold):
+
+def blaster(path, targets, out, threshold, db):
+    if db == "both":
+        db = ['ardb', 'card']
+    else:
+        db = [db]
     jsonfile = '%splusdict.json' % targets
     print jsonfile
     if os.path.isfile(jsonfile):
         plusdict = json.load(open(jsonfile))
 
     else:
-        plusdict = GeneSeekrv2.blaster(path, targets, out, 'ARMI2')
+        markers = glob(path + "/*")
+        for marker in markers:
+            cardcheck = match("^\d{7}$", marker)
+            if db == 'ardb' and cardcheck is not None:
+                markers.remove(marker)
+            elif db == 'card' and cardcheck is None:
+                markers.remove(marker)
+
+        plusdict = GeneSeekrv2.blaster(markers, targets, out, 'ARMI2')
         json.dump(plusdict, open(jsonfile, 'w'), sort_keys=True, indent=4, separators=(',', ': '))
-    count = 80
-    require = defdict("require.tab")
-    antidict = defdict("typeResis.tab")
-    genedict = defaultdict(dict)
-    csvheader = 'Strain'
-    row = ""
-    antirow = ""
-    uniquerow = ""
-    rowcount = 0
-    antihead = "Strain,Gene,\"Resistance Antibiotic\",\"Unique Resistance\"\n"
-    uniquehead = "Strain"
-    for genomerow in plusdict:
-        genedict[genomerow] = {'anti': [], 'gene': [], 'unique': []}
-        row += "\n" + genomerow
-        rowcount += 1
-        for generow in sorted(plusdict[genomerow]):
-            if rowcount <= 1:
-                csvheader += ',' + generow
-            tempcount = 1
 
-            if generow.lower() in require:
-                for othergene in require[generow.lower()]:
-                    for propercasegene in plusdict[genomerow]:
-                        if othergene == propercasegene.lower():
-                            # print propercasegene, othergene, require[generow.lower()], tempcount, len(require[generow.lower()]), plusdict[genomerow][generow]
-                            if plusdict[genomerow][propercasegene] != 0:
-                                tempcount += 1
-            elif plusdict[genomerow][generow] != 0:
-                # print plusdict[genomerow][generow]
-                tempcount = 1
-            else:
-                tempcount = 0
-                # print tempcount, len(require[generow.lower()]), require[generow.lower()]
-            if tempcount == len(require[generow.lower()]) | 1 and plusdict[genomerow][generow] != 0:
-                genedict[genomerow]['gene'].append(generow)
-                # print genomerow, generow, plusdict[genomerow][generow]
-                for antibio in antidict[generow.lower()]:
-                    if antibio not in genedict[genomerow]['anti']:
-                        genedict[genomerow]['anti'].append(antibio)
-            # for plusrow in plusdict[genomerow][generow]:
-            row += ',' + str(plusdict[genomerow][generow])
 
-    uniquedict = {}
 
     json.dump(uniquedict, open('%s/../unique.json' % path, 'w'), sort_keys=True, indent=4, separators=(',', ': '))
     json.dump(antidict, open('%s/../anti.json' % path, 'w'), sort_keys=True, indent=4, separators=(',', ': '))
@@ -85,5 +53,6 @@ parser.add_argument('-o', '--output', required=True, help='Specify output folder
 parser.add_argument('-t', '--tab', type=str, required=True, help='tables file location')
 parser.add_argument('-c', '--cutoff', type=int, default=1, help='Threshold for maximum unique bacteria'
                                                                 ' for a single antibiotic')
+parser.add_argument('-d', '--db', default='both', help='Specify antibiotic markers database')
 args = vars(parser.parse_args())
-blaster(args['marker'], args['input'], args['output'], args['cutoff'])
+blaster(args['marker'], args['input'], args['output'], args['cutoff'], args['db'])

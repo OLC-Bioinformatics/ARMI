@@ -182,9 +182,7 @@ def blaster(markers, strains, out, name):
     markers are the the target fasta folder that with be db'd and BLAST'd against strains folder
     out is the working directory where the blastxml folder will be placed
     name is the partial title of the csv output
-    ALL PATHS REQUIRE TRAILING SLASHES!!!
     '''
-    # TODO: Keep file extension when making dictionary and splice end of
     start = time.time()
     global count, genedict, blastpath, plusdict
     plusdict = {}
@@ -192,7 +190,10 @@ def blaster(markers, strains, out, name):
     blastpath = []
 
     #retrieve markers from input
-    genes = glob.glob(markers + "*.fasta")
+    if os.path.isdir(markers):
+        genes = glob.glob(markers + "*.fasta")
+    elif type(markers) is list:
+        genes = markers
     for i in range(len(strains)):
         threads = runblast(blastqueue)
         threads.setDaemon(True)

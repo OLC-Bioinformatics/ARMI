@@ -30,4 +30,4 @@ for line in open("/Users/mike/Google Drive/CFIA/tabs/classinfo.tab"):
         antidict[linelist[0]] = {'resist': [], 'name': linelist[0], 'function': [], 'complex': []}
     antidict[linelist[0]]['function'] = linelist[1].rstrip()
 
-print json.dumps(antidict, sort_keys=True, indent=4, separators=(',', ': '))
+json.dump(antidict, open("aro.json", "w"), sort_keys=True, indent=4, separators=(',', ': '))
