@@ -30,7 +30,7 @@ class card():
                 count = 0  # for each resistance set count at zero
                 for complex in antidict[self.index]["complex"]:  # Allow for multiple dependencies
                     try:  # some key error exist from card database
-                        if plusdict[genome][complex] == ['+']:  # check if dependenicies are satisfied
+                        if plusdict[genome][complex] == ['+']:  # check if dependencies are satisfied
                             count += 1
                     except KeyError:
                         if complex == 3000105:
