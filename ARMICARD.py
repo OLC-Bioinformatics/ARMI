@@ -132,3 +132,5 @@ def decipher(plusdict, antidict):
         antihead += ",%i" % drugcounter[drug]
     antihead += antistr
     open('/nas/knowlesm/test2.csv', 'w').write(antihead)
+
+

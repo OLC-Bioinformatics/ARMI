@@ -15,7 +15,7 @@ for line in open("/Users/mike/Google Drive/CFIA/tabs/typeResis.tab"):
     if linelist[0] not in antidict:
         addgene(linelist[0], antidict)
 
-    antidict[linelist[0]]['resist'].append(linelist[1].rstrip())
+    antidict[linelist[0]]['resist'].append(linelist[1].rstrip() + "*")
 
 
 for line in open("/Users/mike/Google Drive/CFIA/tabs/require.tab"):

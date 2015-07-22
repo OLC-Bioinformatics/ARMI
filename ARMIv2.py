@@ -1,7 +1,7 @@
 __author__ = 'mikeknowles'
 from glob import glob
 from re import match
-from ARMICARD import
+from ARMICARD import decipher
 import os, time, argparse, json, GeneSeekrv2
 
 
@@ -28,6 +28,8 @@ def blaster(path, targets, out, threshold, db):
 
         plusdict = GeneSeekrv2.blaster(markers, targets, out, 'ARMI2')
         json.dump(plusdict, open(jsonfile, 'w'), sort_keys=True, indent=4, separators=(',', ': '))
+    antidict = json.load("aro.json")
+    decipher(plusdict, antidict)
 
 
 
